@@ -1,5 +1,6 @@
 #define _GNU_SOURCE
 
+#include <err.h>
 #include <errno.h>
 #include <fcntl.h>
 #include <signal.h>
@@ -9,6 +10,8 @@
 #include <time.h>
 #include <unistd.h>
 
+#include "config.h"
+
 static int aconline(void);
 static int lidclosed(void);
 static int markupdated(void);
@@ -16,22 +19,24 @@ static int run(char *const argv[]);
 static void sigterm(int sig);
 static int updatedtoday(void);
 
-#include "config.h"
-
 static volatile sig_atomic_t running = 1;
+static char *const cmdreboot[] = CMDREBOOT;
+static char *const cmdupdate[] = CMDUPDATE;
 
 static int
 aconline(void)
 {
 	char c;
-	int fd, r;
+	int fd;
+	ssize_t n;
 
-	if ((fd = open(ac_path, O_RDONLY | O_CLOEXEC)) < 0)
+	if ((fd = open(ACPATH, O_RDONLY | O_CLOEXEC)) < 0)
 		return 0;
-	r = read(fd, &c, 1) == 1 && c == '1';
+	while ((n = read(fd, &c, 1)) < 0 && errno == EINTR)
+		continue;
 	close(fd);
 
-	return r;
+	return n == 1 && c == '1';
 }
 
 static int
@@ -41,15 +46,16 @@ lidclosed(void)
 	int fd;
 	ssize_t n;
 
-	if ((fd = open(lid_path, O_RDONLY | O_CLOEXEC)) < 0)
+	if ((fd = open(LIDPATH, O_RDONLY | O_CLOEXEC)) < 0)
 		return 0;
-	n = read(fd, buf, sizeof(buf) - 1);
+	while ((n = read(fd, buf, sizeof(buf) - 1)) < 0 && errno == EINTR)
+		continue;
 	close(fd);
 	if (n <= 0)
 		return 0;
 	buf[n] = '\0';
 
-	return strstr(buf, "closed") != NULL;
+	return strstr(buf, "closed") ? 1 : 0;
 }
 
 static int
@@ -57,9 +63,11 @@ markupdated(void)
 {
 	int fd;
 
-	if ((fd = open(stamp_path, O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC,
-	    0644)) < 0)
+	if ((fd = open(STAMPPATH, O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC,
+	    0644)) < 0) {
+		warn("%s", STAMPPATH);
 		return -1;
+	}
 	close(fd);
 
 	return 0;
@@ -71,25 +79,29 @@ run(char *const argv[])
 	int fd, status;
 	pid_t pid;
 
-	if ((pid = fork()) < 0)
+	if ((pid = fork()) < 0) {
+		warn("fork");
 		return -1;
-	if (pid == 0) {
+	}
+	if (!pid) {
 		if ((fd = open("/dev/null", O_RDONLY)) < 0)
 			_exit(127);
-		if (fd != 0) {
-			dup2(fd, 0);
+		if (fd != STDIN_FILENO) {
+			if (dup2(fd, STDIN_FILENO) < 0)
+				_exit(127);
 			close(fd);
 		}
 		execv(argv[0], argv);
-		write(STDERR_FILENO, "autoupdate: execv failed\n",
-		    sizeof("autoupdate: execv failed\n") - 1);
+		warn("%s", argv[0]);
 		_exit(127);
 	}
 	while (waitpid(pid, &status, 0) < 0) {
-		if (errno != EINTR)
+		if (errno != EINTR) {
+			warn("waitpid");
 			return -1;
+		}
 	}
-	if (!WIFEXITED(status) || WEXITSTATUS(status) != 0)
+	if (!WIFEXITED(status) || WEXITSTATUS(status))
 		return -1;
 
 	return 0;
@@ -108,11 +120,11 @@ updatedtoday(void)
 	struct stat st;
 	time_t d;
 
-	if (stat(stamp_path, &st) < 0)
+	if (stat(STAMPPATH, &st) < 0)
 		return 0;
 	d = time(NULL) - st.st_mtime;
 
-	return d >= 0 && d < cooldown_secs;
+	return d >= 0 && d < COOLDOWNSECS;
 }
 
 int
@@ -120,45 +132,47 @@ main(void)
 {
 	struct sigaction sa;
 	struct timespec ts;
-	time_t closed_since, retry_after;
-	int needs_reboot;
+	time_t closedsince, retryafter;
+	int needsreboot;
 
 	memset(&sa, 0, sizeof(sa));
 	sigemptyset(&sa.sa_mask);
 	sa.sa_handler = sigterm;
 	sa.sa_flags = 0;
-	sigaction(SIGINT, &sa, NULL);
-	sigaction(SIGTERM, &sa, NULL);
+	if (sigaction(SIGINT, &sa, NULL) < 0)
+		err(1, "sigaction");
+	if (sigaction(SIGTERM, &sa, NULL) < 0)
+		err(1, "sigaction");
 
-	closed_since = -1;
-	needs_reboot = 0;
-	retry_after = 0;
-	for (; running; sleep(sleep_secs)) {
+	closedsince = -1;
+	needsreboot = 0;
+	retryafter = 0;
+	for (; running; sleep(SLEEPSECS)) {
 		if (!aconline() || !lidclosed()) {
-			closed_since = -1;
+			closedsince = -1;
 			continue;
 		}
 		if (clock_gettime(CLOCK_MONOTONIC, &ts) < 0)
 			continue;
-		if (closed_since < 0)
-			closed_since = ts.tv_sec;
-		if (ts.tv_sec - closed_since < idle_secs)
+		if (closedsince < 0)
+			closedsince = ts.tv_sec;
+		if (ts.tv_sec - closedsince < IDLESECS)
 			continue;
-		if (needs_reboot) {
-			needs_reboot = 0;
-			run(cmd_reboot);
+		if (needsreboot) {
+			needsreboot = 0;
+			run(cmdreboot);
 			continue;
 		}
-		if (ts.tv_sec < retry_after || updatedtoday())
+		if (ts.tv_sec < retryafter || updatedtoday())
 			continue;
-		if (run(cmd_update) == 0 && markupdated() == 0 && running) {
+		if (!run(cmdupdate) && !markupdated() && running) {
 			if (lidclosed() && aconline())
-				run(cmd_reboot);
+				run(cmdreboot);
 			else
-				needs_reboot = 1;
+				needsreboot = 1;
 		}
-		if (clock_gettime(CLOCK_MONOTONIC, &ts) == 0)
-			retry_after = ts.tv_sec + retry_secs;
+		if (!clock_gettime(CLOCK_MONOTONIC, &ts))
+			retryafter = ts.tv_sec + RETRYSECS;
 	}
 
 	return 0;
