@@ -10,6 +10,4 @@ enum {
 #define STAMPPATH "/var/lib/autoupdate.stamp"
 
 #define CMDREBOOT { "/usr/bin/systemctl", "reboot", NULL }
-#define CMDUPDATE { \
-    "/usr/bin/pacman", "-Syu", "--noconfirm", "--noprogressbar", NULL \
-}
+#define CMDUPDATE { "/usr/bin/pacman", "-Syu", "--noconfirm", "--noprogressbar", NULL }

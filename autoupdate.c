@@ -61,8 +61,7 @@ markupdated(void)
 {
 	int fd;
 
-	if ((fd = open(STAMPPATH, O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC,
-	    0644)) < 0) {
+	if ((fd = open(STAMPPATH, O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC, 0644)) < 0) {
 		warn("%s", STAMPPATH);
 		return -1;
 	}
