@@ -3,9 +3,12 @@ VERSION = 1.0
 PREFIX = /usr/local
 
 CC = cc
-CPPFLAGS = -DVERSION=\"$(VERSION)\"
+INCS =
+LIBS =
+
+CPPFLAGS = -DVERSION=\"$(VERSION)\" $(INCS)
 CFLAGS = -std=c99 -pedantic -Wall -Wextra -Werror -O2
-LDFLAGS = -s
+LDFLAGS = -s $(LIBS)
 
 SRC = $(PROG).c
 OBJ = $(SRC:.c=.o)
