@@ -20,8 +20,6 @@ static void sigterm(int sig);
 static int updatedtoday(void);
 
 static volatile sig_atomic_t running = 1;
-static char *const cmdreboot[] = CMDREBOOT;
-static char *const cmdupdate[] = CMDUPDATE;
 
 static int
 aconline(void)
@@ -130,6 +128,8 @@ updatedtoday(void)
 int
 main(void)
 {
+	static char *const cmdreboot[] = CMDREBOOT;
+	static char *const cmdupdate[] = CMDUPDATE;
 	struct sigaction sa;
 	struct timespec ts;
 	time_t closedsince, retryafter;
@@ -165,13 +165,20 @@ main(void)
 		}
 		if (ts.tv_sec < retryafter || updatedtoday())
 			continue;
-		if (!run(cmdupdate) && !markupdated() && running) {
-			if (lidclosed() && aconline())
-				run(cmdreboot);
-			else
-				needsreboot = 1;
+		if (run(cmdupdate) < 0 || markupdated() < 0) {
+			if (!running)
+				break;
+			if (clock_gettime(CLOCK_MONOTONIC, &ts) >= 0)
+				retryafter = ts.tv_sec + RETRYSECS;
+			continue;
 		}
-		if (!clock_gettime(CLOCK_MONOTONIC, &ts))
+		if (!running)
+			break;
+		if (aconline() && lidclosed())
+			run(cmdreboot);
+		else
+			needsreboot = 1;
+		if (clock_gettime(CLOCK_MONOTONIC, &ts) >= 0)
 			retryafter = ts.tv_sec + RETRYSECS;
 	}
 
