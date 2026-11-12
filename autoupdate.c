@@ -76,11 +76,10 @@ run(char *const argv[])
 	if (!pid) {
 		if ((fd = open("/dev/null", O_RDONLY)) < 0)
 			_exit(127);
-		if (fd != STDIN_FILENO) {
-			if (dup2(fd, STDIN_FILENO) < 0)
-				_exit(127);
+		if (dup2(fd, STDIN_FILENO) < 0)
+			_exit(127);
+		if (fd != STDIN_FILENO)
 			close(fd);
-		}
 		execv(argv[0], argv);
 		warn("%s", argv[0]);
 		_exit(127);
@@ -170,8 +169,6 @@ main(void)
 			run(cmdreboot);
 		else
 			needsreboot = 1;
-		if (clock_gettime(CLOCK_MONOTONIC, &ts) >= 0)
-			retryafter = ts.tv_sec + RETRYSECS;
 	}
 
 	return 0;
