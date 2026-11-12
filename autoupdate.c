@@ -12,13 +12,6 @@
 
 #include "config.h"
 
-static int aconline(void);
-static int lidclosed(void);
-static int markupdated(void);
-static int run(char *const argv[]);
-static void sigterm(int sig);
-static int updatedtoday(void);
-
 static volatile sig_atomic_t running = 1;
 
 static int
