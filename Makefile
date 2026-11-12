@@ -1,11 +1,12 @@
 PROG = autoupdate
+VERSION = 1.0.0
 PREFIX = /usr/local
 
 CC = cc
 INCS =
 LIBS =
 
-CPPFLAGS = $(INCS)
+CPPFLAGS = -DVERSION=\"$(VERSION)\" $(INCS)
 CFLAGS = -std=c99 -pedantic -Wall -Wextra -Werror -O2
 LDFLAGS = -s $(LIBS)
 
@@ -15,6 +16,9 @@ OBJ = $(SRC:.c=.o)
 all: $(PROG)
 
 $(OBJ): config.h
+
+config.h:
+	cp config.def.h $@
 
 .c.o:
 	$(CC) $(CPPFLAGS) $(CFLAGS) -c $<

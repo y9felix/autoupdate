@@ -1,2 +1,3 @@
 autoupdate
 *.o
+config.h
